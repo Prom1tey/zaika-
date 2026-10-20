@@ -611,7 +611,6 @@
             <button type="button" data-type="gift"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="9" rx="1.5"></rect><rect x="3" y="7.5" width="18" height="3.5" rx="1"></rect><path d="M12 7.5V20"></path><path d="M12 7.5C10.5 4 7 4 7 6s3 1.5 5 1.5c2 0 5 .5 5-1.5s-3.5-2-5 1.5z"></path></svg>Подарок</button>
           </div>
           <textarea id="hurt-text" maxlength="2000" aria-labelledby="ask-title" placeholder="Напиши здесь" hidden></textarea>
-          <p class="wish-hint" id="ask-hint">Можно ничего не писать и просто нажать «Отправить».</p>
           <p class="flash error" id="ask-error" role="alert" hidden></p>
           <button type="submit" class="btn btn-main" id="send">Отправить</button>
         </form>
@@ -789,15 +788,32 @@
       if (window.DEMO_API) return window.DEMO_API(body);
       return Promise.reject(new Error("Сайт ещё не подключён к таблице."));
     }
-    return fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(body),
-      redirect: "follow"
-    }).then(function (r) { return r.json(); }).then(function (d) {
-      if (!d || !d.ok) throw new Error((d && d.error) || "");
-      return d.result;
-    });
+    // номер запроса: если повторная попытка дойдёт дважды, таблица запишет её один раз
+    body.rid = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    var tries = 0;
+    function attempt() {
+      return fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(body),
+        redirect: "follow"
+      }).then(function (r) { return r.text(); }).then(function (t) {
+        var d;
+        try { d = JSON.parse(t); }
+        catch (e) { throw new Error("Не получилось связаться с таблицей. Попробуй ещё раз чуть позже."); }
+        if (!d || !d.ok) throw new Error((d && d.error) || "");
+        return d.result;
+      }).catch(function (err) {
+        // сбой связи: тихо пробуем ещё раз, всего до трёх попыток
+        if (err && err.name === "TypeError" && tries < 2) {
+          tries++;
+          return new Promise(function (res) { setTimeout(res, 900 * tries); }).then(attempt);
+        }
+        if (err && err.name === "TypeError") throw new Error("Нет связи с таблицей. Проверь интернет и попробуй ещё раз.");
+        throw err;
+      });
+    }
+    return attempt();
   }
   function errText(e, fallback) {
     var m = e && e.message ? String(e.message) : "";
@@ -1116,8 +1132,6 @@
     $("hurt-text").hidden = isWant;
     // у «обиды» после причины есть ещё шаг, поэтому «Дальше»
     $("send").textContent = isWant ? "Отправить" : "Дальше";
-    $("ask-hint").hidden = isWant;
-    $("ask-hint").textContent = "Можно ничего не писать и просто нажать «Дальше».";
     renumber();
     showStep("ask-form-wrap");
     setTimeout(function () { (isWant ? wishInputs()[0] : $("hurt-text")).focus(); }, 60);
