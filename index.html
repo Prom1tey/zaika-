@@ -1381,11 +1381,25 @@
   $("refresh").addEventListener("click", loadHistory);
 
   // ----- Старт: если уже входили на этом телефоне, входим сами -----
+  // Сохранённый вход открывается сразу, а проверяется в фоне:
+  // плохой интернет не выкидывает её из входа, только смена пароля
   var saved = load();
-  if (saved && saved.name && saved.pass) {
+  if (saved && saved.name && saved.pass && (saved.role === "user" || saved.role === "admin")) {
+    enter(saved);
     call("login", saved.name, saved.pass).then(function (r) {
-      enter({ name: r.name, pass: saved.pass, role: r.role });
-    }).catch(function () { clear(); show("login"); });
+      if (r.role !== saved.role) {
+        saved.role = r.role;
+        save(saved);
+        enter(saved);
+      }
+    }).catch(function (err) {
+      if (/Неверное имя или пароль/.test((err && err.message) || "")) {
+        logout();
+        $("login-name").value = saved.name;
+        $("login-error").textContent = "Пароль поменялся. Войди заново.";
+        $("login-error").hidden = false;
+      }
+    });
   } else {
     show("login");
   }
